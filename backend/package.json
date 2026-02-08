@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "migrate": "node migrations/migrate.js"
+    "migrate": "node migrations/migrate.js",
+    "test-s3": "node test-s3-access.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.490.0",
@@ -16,7 +17,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "multer": "^2.0.2",
     "pg": "^8.11.3",
     "slugify": "^1.6.6",
     "uuid": "^9.0.1"

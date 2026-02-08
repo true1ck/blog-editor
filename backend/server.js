@@ -2,17 +2,12 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import axios from 'axios'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import { pool } from './config/database.js'
+import { pool, testConnection, resetPool } from './config/database.js'
 import { authenticateToken } from './middleware/auth.js'
-import { s3Client, BUCKET_NAME, HeadBucketCommand, isS3Configured } from './config/s3.js'
+import { s3Client, BUCKET_NAME, ListObjectsV2Command, isS3Configured } from './config/s3.js'
 import postRoutes from './routes/posts.js'
 import uploadRoutes from './routes/upload.js'
 import logger from './utils/logger.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 dotenv.config()
 
@@ -96,9 +91,6 @@ app.use((req, res, next) => {
 app.use('/api/posts', authenticateToken, postRoutes)
 app.use('/api/upload', authenticateToken, uploadRoutes)
 
-// TEMPORARY: Serve static images (FOR TESTING ONLY - REMOVE IN PRODUCTION)
-app.use('/api/images', express.static(path.join(__dirname, 'images')))
-
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
@@ -135,6 +127,8 @@ async function performStartupChecks() {
   // 1. Check Database Connection
   console.log('📊 Checking Database Connection...')
   try {
+    // Use improved connection test with better error messages
+    const connectionTest = await testConnection()
     logger.db('SELECT', 'SELECT NOW(), version()', [])
     const dbResult = await pool.query('SELECT NOW(), version()')
     const dbTime = dbResult.rows[0].now
@@ -163,7 +157,35 @@ async function performStartupChecks() {
   } catch (error) {
     logger.error('DATABASE', 'Database connection failed', error)
     console.error(`   ❌ Database connection failed: ${error.message}`)
-    console.error(`   💡 Check your DATABASE_URL in .env file`)
+    
+    // Provide specific guidance based on error code
+    if (error.code === 'INVALID_PASSWORD' || error.message.includes('[YOUR-PASSWORD]')) {
+      console.error(`   🔑 Placeholder password detected in DATABASE_URL`)
+      console.error(`   💡 Replace [YOUR-PASSWORD] with your actual Supabase password`)
+      console.error(`   💡 Format: postgresql://postgres.xxx:YOUR_ACTUAL_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres`)
+    } else if (error.code === 'AUTH_FAILED' || error.message.includes('password authentication failed') || error.message.includes('password')) {
+      console.error(`   🔑 Authentication failed - Check your password in DATABASE_URL`)
+      console.error(`   💡 Format: postgresql://user:password@host:port/database`)
+      console.error(`   💡 Verify your Supabase password is correct`)
+    } else if (error.code === 'CIRCUIT_BREAKER' || error.message.includes('Circuit breaker') || error.message.includes('too many')) {
+      console.error(`   🔄 Too many failed attempts detected`)
+      console.error(`   💡 ${error.message}`)
+      console.error(`   💡 The testConnection function will automatically retry after a delay`)
+      console.error(`   💡 If this persists, wait 30-60 seconds and restart the server`)
+      console.error(`   💡 Verify your DATABASE_URL password is correct in .env`)
+    } else if (error.code === 'HOST_ERROR' || error.message.includes('host') || error.message.includes('ENOTFOUND')) {
+      console.error(`   🌐 Cannot reach database host - Check your DATABASE_URL hostname`)
+      console.error(`   💡 Verify the hostname in your connection string is correct`)
+    } else if (error.code === 'TIMEOUT' || error.message.includes('timeout')) {
+      console.error(`   ⏱️  Database connection timeout`)
+      console.error(`   💡 Check your network connection and database accessibility`)
+    } else if (error.code === 'INVALID_FORMAT') {
+      console.error(`   📝 Invalid DATABASE_URL format`)
+      console.error(`   💡 Expected: postgresql://user:password@host:port/database`)
+    } else {
+      console.error(`   💡 Check your DATABASE_URL in .env file`)
+      console.error(`   💡 Format: postgresql://postgres.xxx:[PASSWORD]@aws-1-ap-south-1.pooler.supabase.com:5432/postgres`)
+    }
     return false
   }
 
@@ -178,11 +200,18 @@ async function performStartupChecks() {
       console.log(`   ✅ AWS credentials configured`)
       console.log(`   🪣 S3 Bucket: ${BUCKET_NAME}`)
       console.log(`   🌍 AWS Region: ${process.env.AWS_REGION || 'us-east-1'}`)
+      console.log(`   💡 Using bucket: ${BUCKET_NAME} in region: ${process.env.AWS_REGION || 'us-east-1'}`)
       
-      // Try to check bucket access (this might fail if bucket doesn't exist, but that's okay)
+      // Try to check bucket access using ListObjectsV2 (only requires s3:ListBucket permission)
+      // This is more compatible with minimal IAM policies
       if (s3Client) {
         try {
-          await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }))
+          // Use ListObjectsV2 with MaxKeys=0 to just check access without listing objects
+          // This only requires s3:ListBucket permission (which matches your IAM policy)
+          await s3Client.send(new ListObjectsV2Command({ 
+            Bucket: BUCKET_NAME,
+            MaxKeys: 0  // Don't actually list objects, just check access
+          }))
           console.log(`   ✅ S3 bucket is accessible`)
         } catch (s3Error) {
           if (s3Error.name === 'NotFound' || s3Error.$metadata?.httpStatusCode === 404) {
@@ -191,6 +220,12 @@ async function performStartupChecks() {
           } else if (s3Error.name === 'Forbidden' || s3Error.$metadata?.httpStatusCode === 403) {
             console.log(`   ⚠️  S3 bucket access denied`)
             console.log(`   💡 Check IAM permissions for bucket: ${BUCKET_NAME}`)
+            console.log(`   💡 Required permissions: s3:ListBucket, s3:PutObject, s3:GetObject`)
+            console.log(`   💡 Common issues:`)
+            console.log(`      - Credentials in .env don't match IAM user with policy`)
+            console.log(`      - Policy not propagated yet (wait 2-3 minutes)`)
+            console.log(`      - Wrong region in AWS_REGION`)
+            console.log(`   💡 See TROUBLESHOOT_S3_ACCESS.md for detailed troubleshooting`)
           } else {
             console.log(`   ⚠️  S3 bucket check failed: ${s3Error.message}`)
           }
@@ -286,9 +321,32 @@ startServer().catch((error) => {
   process.exit(1)
 })
 
-// Graceful shutdown
+// Graceful shutdown - important for hot reload to prevent connection pool exhaustion
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM signal received: closing HTTP server')
-  await pool.end()
+  console.log('SIGTERM signal received: closing HTTP server and database connections')
+  try {
+    await pool.end()
+    console.log('✅ Database connections closed')
+  } catch (error) {
+    console.error('❌ Error closing database connections:', error.message)
+  }
   process.exit(0)
 })
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT signal received: closing HTTP server and database connections')
+  try {
+    await pool.end()
+    console.log('✅ Database connections closed')
+  } catch (error) {
+    console.error('❌ Error closing database connections:', error.message)
+  }
+  process.exit(0)
+})
+
+// Warning about running multiple apps with hot reload
+if (process.env.NODE_ENV !== 'production') {
+  console.log('\n⚠️  Running in development mode with hot reload')
+  console.log('   💡 If running both blog-editor and api-v1, connection pools are reduced to prevent Supabase limits')
+  console.log('   💡 Consider running only one in hot reload mode if you hit connection limits\n')
+}

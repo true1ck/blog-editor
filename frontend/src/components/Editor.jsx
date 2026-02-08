@@ -35,46 +35,7 @@ export default function Editor({ content, onChange, onImageUpload }) {
 
       toast.loading('Uploading image...', { id: 'image-upload' })
 
-      // TEMPORARY: Use local upload for testing (REMOVE IN PRODUCTION)
-      // TODO: Remove this and use S3 upload instead
-      let imageUrl
-      try {
-        const formData = new FormData()
-        formData.append('image', file)
-
-        console.log('Uploading image locally (TEMPORARY):', {
-          filename: file.name,
-          size: file.size,
-          type: file.type
-        })
-
-        const response = await api.post('/upload/local', formData, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        })
-
-        // Get full URL (backend serves images at /api/images/)
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001'
-        imageUrl = `${baseUrl}${response.data.imageUrl}`
-
-        console.log('Local upload successful:', {
-          imageUrl,
-          filename: response.data.filename
-        })
-      } catch (error) {
-        console.error('Local upload failed:', error)
-        if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-          throw new Error('Cannot connect to server. Make sure the backend is running.')
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication failed. Please login again.')
-        }
-        throw new Error(error.response?.data?.message || error.message || 'Failed to upload image')
-      }
-
-      /* ORIGINAL S3 UPLOAD CODE (COMMENTED OUT FOR TESTING)
-      // Get presigned URL
+      // Get presigned URL from backend
       let data
       try {
         const response = await api.post('/upload/presigned-url', {
@@ -96,7 +57,7 @@ export default function Editor({ content, onChange, onImageUpload }) {
         throw error
       }
 
-      // Upload to S3
+      // Upload to S3 using presigned URL
       console.log('Uploading to S3:', {
         uploadUrl: data.uploadUrl.substring(0, 100) + '...',
         imageUrl: data.imageUrl,
@@ -136,9 +97,8 @@ export default function Editor({ content, onChange, onImageUpload }) {
         imageUrl: data.imageUrl
       })
 
-      // Insert image in editor
+      // Use the image URL from the presigned URL response
       const imageUrl = data.imageUrl
-      */
       editor.chain().focus().setImage({ 
         src: imageUrl,
         alt: file.name,
@@ -221,6 +181,17 @@ export default function Editor({ content, onChange, onImageUpload }) {
       editorRef.current = editor
     }
   }, [editor])
+
+  // Update editor content when content prop changes
+  useEffect(() => {
+    if (editor && content !== undefined) {
+      const currentContent = editor.getJSON()
+      // Only update if content is actually different to avoid infinite loops
+      if (JSON.stringify(currentContent) !== JSON.stringify(content)) {
+        editor.commands.setContent(content || '')
+      }
+    }
+  }, [content, editor])
 
   if (!editor) {
     return null

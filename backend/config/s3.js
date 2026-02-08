@@ -1,6 +1,6 @@
 import { S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { PutObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3'
+import { PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { v4 as uuid } from 'uuid'
 import dotenv from 'dotenv'
 import logger from '../utils/logger.js'
@@ -19,10 +19,13 @@ export const isS3Configured = () => {
 // Get bucket name (support both env var names)
 export const BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.AWS_BUCKET_NAME
 
+// Get AWS region (default to us-east-1 if not specified)
+export const AWS_REGION = process.env.AWS_REGION || 'us-east-1'
+
 // Only create S3 client if credentials are available
 export const s3Client = isS3Configured()
   ? new S3Client({
-      region: process.env.AWS_REGION || 'us-east-1',
+      region: AWS_REGION,
       credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
@@ -30,8 +33,8 @@ export const s3Client = isS3Configured()
     })
   : null
 
-// Export HeadBucketCommand for health checks
-export { HeadBucketCommand }
+// Export ListObjectsV2Command for health checks (only requires s3:ListBucket permission)
+export { ListObjectsV2Command }
 
 export async function getPresignedUploadUrl(filename, contentType) {
   logger.s3('PRESIGNED_URL_REQUEST', { filename, contentType })
@@ -71,7 +74,8 @@ export async function getPresignedUploadUrl(filename, contentType) {
   const startTime = Date.now()
   const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 })
   const duration = Date.now() - startTime
-  const imageUrl = `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`
+  // Generate S3 public URL (works for all standard AWS regions)
+  const imageUrl = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com/${key}`
 
   logger.s3('PRESIGNED_URL_CREATED', { 
     key, 
