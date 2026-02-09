@@ -1,5 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react'
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import StarterKit from '@tiptap/starter-kit'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
@@ -7,128 +7,125 @@ import Underline from '@tiptap/extension-underline'
 import { FontSize } from '../extensions/FontSize'
 import { ImageResize } from '../extensions/ImageResize'
 import Toolbar from './Toolbar'
+import ImageBubbleMenu from './ImageBubbleMenu'
+import MediaLibraryModal from './MediaLibraryModal'
+import AltTextModal from './AltTextModal'
 import api from '../utils/api'
 import toast from 'react-hot-toast'
 
-export default function Editor({ content, onChange, onImageUpload }) {
+export default function Editor({ content, onChange, onImageUpload, postId, sessionId }) {
   const editorRef = useRef(null)
+  const [showMediaModal, setShowMediaModal] = useState(false)
+  const [mediaModalMode, setMediaModalMode] = useState('insert')
+  const [showAltModal, setShowAltModal] = useState(false)
+  const [showCaptionModal, setShowCaptionModal] = useState(false)
 
-  const handleImageUpload = async (file) => {
+  const performUpload = useCallback(async (file, options = {}) => {
+    const { insert = true } = options
     const editor = editorRef.current
-    if (!editor) {
-      toast.error('Editor not ready')
-      return
+    if (insert && !editor) {
+      throw new Error('Editor not ready')
+    }
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Please select an image file')
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      throw new Error('Image size must be less than 10MB')
     }
 
+    const response = await api.post('/upload/presigned-url', {
+      filename: file.name,
+      contentType: file.type,
+      postId: postId || undefined,
+      sessionId: sessionId || undefined,
+    })
+    const data = response.data
+
+    const uploadResponse = await fetch(data.uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    })
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text().catch(() => 'Unknown error')
+      throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`)
+    }
+
+    const imageUrl = data.imageUrl
+    if (insert && editor) {
+      editor.chain().focus().setImage({ src: imageUrl, alt: file.name }).run()
+      if (onImageUpload) onImageUpload(imageUrl)
+    }
+    return imageUrl
+  }, [postId, sessionId, onImageUpload])
+
+  const handleImageUpload = useCallback(async (file) => {
     try {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error('Please select an image file')
-        return
-      }
-
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('Image size must be less than 10MB')
-        return
-      }
-
       toast.loading('Uploading image...', { id: 'image-upload' })
-
-      // Get presigned URL from backend
-      let data
-      try {
-        const response = await api.post('/upload/presigned-url', {
-          filename: file.name,
-          contentType: file.type,
-        })
-        data = response.data
-      } catch (error) {
-        console.error('Presigned URL request failed:', error)
-        if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
-          throw new Error('Cannot connect to server. Make sure the backend is running.')
-        }
-        if (error.response?.status === 401) {
-          throw new Error('Authentication failed. Please login again.')
-        }
-        if (error.response?.status === 500) {
-          throw new Error('Server error. Check if AWS S3 is configured correctly.')
-        }
-        throw error
-      }
-
-      // Upload to S3 using presigned URL
-      console.log('Uploading to S3:', {
-        uploadUrl: data.uploadUrl.substring(0, 100) + '...',
-        imageUrl: data.imageUrl,
-        fileSize: file.size,
-        contentType: file.type
-      })
-
-      let uploadResponse
-      try {
-        uploadResponse = await fetch(data.uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: {
-            'Content-Type': file.type,
-          },
-        })
-      } catch (fetchError) {
-        console.error('S3 upload fetch error:', fetchError)
-        if (fetchError.message === 'Failed to fetch' || fetchError.name === 'TypeError') {
-          throw new Error('Failed to connect to S3. This might be a CORS issue. Check your S3 bucket CORS configuration.')
-        }
-        throw fetchError
-      }
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text().catch(() => 'Unknown error')
-        console.error('S3 upload failed:', {
-          status: uploadResponse.status,
-          statusText: uploadResponse.statusText,
-          error: errorText
-        })
-        throw new Error(`S3 upload failed: ${uploadResponse.status} ${uploadResponse.statusText}. ${errorText}`)
-      }
-
-      console.log('S3 upload successful:', {
-        status: uploadResponse.status,
-        imageUrl: data.imageUrl
-      })
-
-      // Use the image URL from the presigned URL response
-      const imageUrl = data.imageUrl
-      editor.chain().focus().setImage({ 
-        src: imageUrl,
-        alt: file.name,
-      }).run()
+      await performUpload(file, { insert: true })
       toast.success('Image uploaded successfully!', { id: 'image-upload' })
-
-      if (onImageUpload) {
-        onImageUpload(imageUrl)
-      }
     } catch (error) {
-      console.error('Image upload failed:', error)
-      const errorMessage = error.response?.data?.message || 
-                           error.message || 
-                           'Failed to upload image. Please try again.'
-      
-      toast.error(errorMessage, { 
-        id: 'image-upload',
-        duration: 5000,
-      })
-      
-      // Log detailed error for debugging
-      if (error.response) {
-        console.error('Error response:', error.response.data)
-        console.error('Error status:', error.response.status)
-      }
-      if (error.request) {
-        console.error('Request made but no response:', error.request)
-      }
+      const msg = error.response?.data?.message || error.message || 'Failed to upload image.'
+      toast.error(msg, { id: 'image-upload', duration: 5000 })
+      throw error
     }
-  }
+  }, [performUpload])
+
+  const uploadFileOnly = useCallback(async (file) => {
+    return performUpload(file, { insert: false })
+  }, [performUpload])
+
+  const insertImage = useCallback((url, alt = '') => {
+    const editor = editorRef.current
+    if (editor) {
+      editor.chain().focus().setImage({ src: url, alt }).run()
+    }
+  }, [])
+
+  const replaceImage = useCallback((url, alt = '') => {
+    const editor = editorRef.current
+    if (editor && editor.isActive('image')) {
+      editor.chain().focus().updateAttributes('image', { src: url, alt }).run()
+    }
+  }, [])
+
+  const handleMediaSelect = useCallback((url, alt) => {
+    if (mediaModalMode === 'replace') {
+      replaceImage(url, alt)
+      toast.success('Image replaced')
+    } else {
+      insertImage(url, alt)
+    }
+    setShowMediaModal(false)
+  }, [mediaModalMode, replaceImage, insertImage])
+
+  const handleAltTextSave = useCallback((alt) => {
+    const editor = editorRef.current
+    if (editor && editor.isActive('image')) {
+      editor.chain().focus().updateAttributes('image', { alt }).run()
+      toast.success('Alt text updated')
+    }
+    setShowAltModal(false)
+  }, [])
+
+  const getCurrentAlt = useCallback(() => {
+    const editor = editorRef.current
+    return editor?.isActive('image') ? editor.getAttributes('image').alt || '' : ''
+  }, [])
+
+  const handleCaptionSave = useCallback((title) => {
+    const editor = editorRef.current
+    if (editor && editor.isActive('image')) {
+      editor.chain().focus().updateAttributes('image', { title: title || null }).run()
+      toast.success('Caption updated')
+    }
+    setShowCaptionModal(false)
+  }, [])
+
+  const getCurrentTitle = useCallback(() => {
+    const editor = editorRef.current
+    return editor?.isActive('image') ? editor.getAttributes('image').title || '' : ''
+  }, [])
 
   const editor = useEditor({
     extensions: [
@@ -199,8 +196,50 @@ export default function Editor({ content, onChange, onImageUpload }) {
 
   return (
     <div className="border border-gray-300 rounded-lg overflow-hidden">
-      <Toolbar editor={editor} onImageUpload={handleImageUpload} />
+      <Toolbar
+        editor={editor}
+        onImageUpload={handleImageUpload}
+        onUploadFile={uploadFileOnly}
+        onOpenMediaLibrary={() => {
+          setMediaModalMode('insert')
+          setShowMediaModal(true)
+        }}
+        postId={postId}
+        sessionId={sessionId}
+      />
       <EditorContent editor={editor} className="min-h-[400px] bg-white" />
+      <ImageBubbleMenu
+        editor={editor}
+        onReplaceClick={() => {
+          setMediaModalMode('replace')
+          setShowMediaModal(true)
+        }}
+        onAltTextClick={() => setShowAltModal(true)}
+        onCaptionClick={() => setShowCaptionModal(true)}
+      />
+      <MediaLibraryModal
+        isOpen={showMediaModal}
+        onClose={() => setShowMediaModal(false)}
+        onInsertImage={handleMediaSelect}
+        postId={postId}
+        sessionId={sessionId}
+        onUploadFiles={uploadFileOnly}
+        mode={mediaModalMode}
+      />
+      <AltTextModal
+        isOpen={showAltModal}
+        initialValue={getCurrentAlt()}
+        onSave={handleAltTextSave}
+        onClose={() => setShowAltModal(false)}
+      />
+      <AltTextModal
+        isOpen={showCaptionModal}
+        initialValue={getCurrentTitle()}
+        onSave={handleCaptionSave}
+        onClose={() => setShowCaptionModal(false)}
+        title="Edit caption"
+        placeholder="Caption (shown below image)"
+      />
     </div>
   )
 }

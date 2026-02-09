@@ -1,19 +1,37 @@
 import express from 'express'
-import { getPresignedUploadUrl } from '../config/s3.js'
+import { getPresignedUploadUrl, listBlogImages, deleteBlogImage } from '../config/s3.js'
 import logger from '../utils/logger.js'
 
 const router = express.Router()
+
+// List media for a blog (Media Library)
+// GET /upload/media?postId=xxx or ?sessionId=xxx
+router.get('/media', async (req, res) => {
+  try {
+    const { postId, sessionId } = req.query
+    if (!postId && !sessionId) {
+      return res.status(400).json({ message: 'postId or sessionId is required' })
+    }
+    const items = await listBlogImages(postId || null, sessionId || null)
+    res.json({ items })
+  } catch (error) {
+    logger.error('UPLOAD', 'Error listing media', error)
+    res.status(500).json({ message: error.message || 'Failed to list media' })
+  }
+})
 
 // Get presigned URL for image upload
 // Note: authenticateToken middleware is applied at server level
 router.post('/presigned-url', async (req, res) => {
   try {
-    const { filename, contentType } = req.body
+    const { filename, contentType, postId, sessionId } = req.body
 
     logger.transaction('GENERATE_PRESIGNED_URL', { 
       userId: req.user.id,
       filename,
-      contentType
+      contentType,
+      postId,
+      sessionId
     })
 
     if (!filename || !contentType) {
@@ -48,7 +66,7 @@ router.post('/presigned-url', async (req, res) => {
     }
 
     const startTime = Date.now()
-    const { uploadUrl, imageUrl, key } = await getPresignedUploadUrl(filename, contentType)
+    const { uploadUrl, imageUrl, key } = await getPresignedUploadUrl(filename, contentType, postId, sessionId)
     const duration = Date.now() - startTime
 
     logger.s3('PRESIGNED_URL_GENERATED', {
@@ -86,6 +104,22 @@ router.post('/presigned-url', async (req, res) => {
       message: errorMessage,
       error: error.name || 'Unknown error'
     })
+  }
+})
+
+// Delete image from S3 (Media Library)
+// DELETE /upload/media with body { key: "blogs/123/images/uuid.jpg" }
+router.delete('/media', async (req, res) => {
+  try {
+    const { key } = req.body
+    if (!key) {
+      return res.status(400).json({ message: 'key is required' })
+    }
+    await deleteBlogImage(key)
+    res.status(204).end()
+  } catch (error) {
+    logger.error('UPLOAD', 'Error deleting media', error)
+    res.status(500).json({ message: error.message || 'Failed to delete from storage' })
   }
 })
 

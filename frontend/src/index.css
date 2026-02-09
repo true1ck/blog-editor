@@ -82,6 +82,27 @@ body {
   max-width: 100%;
 }
 
+.ProseMirror .image-resize-wrapper.align-left {
+  display: block;
+  width: fit-content;
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.ProseMirror .image-resize-wrapper.align-center {
+  display: block;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.ProseMirror .image-resize-wrapper.align-right {
+  display: block;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: 0;
+}
+
 .ProseMirror .image-resize-wrapper.selected {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
@@ -97,12 +118,24 @@ body {
   cursor: default;
 }
 
+.ProseMirror .image-resize-wrapper .image-resize-placeholder {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: image-placeholder-pulse 1.2s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+@keyframes image-placeholder-pulse {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}
+
 .ProseMirror .image-resize-wrapper .resize-handle {
   position: absolute;
-  bottom: -8px;
-  right: -8px;
-  width: 24px;
-  height: 24px;
+  bottom: -10px;
+  right: -10px;
+  width: 32px;
+  height: 32px;
   background-color: #3b82f6;
   border: 2px solid white;
   border-radius: 50%;
@@ -112,8 +145,8 @@ body {
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 12px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .ProseMirror .image-resize-wrapper .resize-handle:hover {

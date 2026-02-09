@@ -184,16 +184,22 @@ function ListItemNode({ content, marks }) {
 }
 
 function ImageNode({ attrs }) {
-  const { src, alt = '', title = null } = attrs
+  const { src, alt = '', title = null, width, height, align } = attrs
 
   if (!src) return null
 
+  const alignClass = align === 'left' ? 'mr-auto' : align === 'right' ? 'ml-auto' : 'mx-auto'
+  const style = {}
+  if (width) style.width = `${width}px`
+  if (height) style.height = `${height}px`
+
   return (
-    <div className="mb-4">
+    <div className={`mb-4 block ${alignClass}`}>
       <img
         src={src}
         alt={alt}
-        className="w-full rounded-lg"
+        className="max-w-full h-auto rounded-lg"
+        style={Object.keys(style).length ? style : undefined}
       />
       {title && (
         <p className="text-sm text-gray-500 text-center mt-2">

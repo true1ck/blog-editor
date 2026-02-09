@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const Toolbar = ({ editor, onImageUpload }) => {
+const Toolbar = ({ editor, onImageUpload, onUploadFile, onOpenMediaLibrary, postId, sessionId }) => {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [showFontSize, setShowFontSize] = useState(false)
 
@@ -14,14 +14,6 @@ const Toolbar = ({ editor, onImageUpload }) => {
   ]
 
   const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '32px']
-
-  const handleImageInput = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      onImageUpload(file)
-    }
-    e.target.value = ''
-  }
 
   return (
     <div className="border-b border-gray-300 bg-gray-50 p-2 flex flex-wrap items-center gap-2">
@@ -189,27 +181,15 @@ const Toolbar = ({ editor, onImageUpload }) => {
         )}
       </div>
 
-      {/* Image Upload */}
+      {/* Media Library - Insert Image */}
       <div>
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleImageInput}
-          className="hidden"
-          id="image-upload-input"
-        />
         <button
           type="button"
-          onClick={() => {
-            const input = document.getElementById('image-upload-input')
-            if (input) {
-              input.click()
-            }
-          }}
+          onClick={() => onOpenMediaLibrary?.()}
           className={`p-2 rounded hover:bg-gray-200 ${
             editor.isActive('image') ? 'bg-gray-300' : ''
           }`}
-          title="Insert Image"
+          title="Insert Image (Media Library)"
         >
           🖼️
         </button>

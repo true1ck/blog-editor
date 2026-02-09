@@ -1,6 +1,6 @@
 import { S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { PutObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { v4 as uuid } from 'uuid'
 import dotenv from 'dotenv'
 import logger from '../utils/logger.js'
@@ -36,8 +36,14 @@ export const s3Client = isS3Configured()
 // Export ListObjectsV2Command for health checks (only requires s3:ListBucket permission)
 export { ListObjectsV2Command }
 
-export async function getPresignedUploadUrl(filename, contentType) {
-  logger.s3('PRESIGNED_URL_REQUEST', { filename, contentType })
+/**
+ * @param {string} filename
+ * @param {string} contentType
+ * @param {string} [postId] - Blog post ID for per-blog folder structure
+ * @param {string} [sessionId] - Session ID for draft posts (no postId yet)
+ */
+export async function getPresignedUploadUrl(filename, contentType, postId, sessionId) {
+  logger.s3('PRESIGNED_URL_REQUEST', { filename, contentType, postId, sessionId })
 
   if (!isS3Configured()) {
     logger.error('S3', 'S3 not configured', null)
@@ -56,8 +62,11 @@ export async function getPresignedUploadUrl(filename, contentType) {
 
   // Extract file extension from filename or content type
   const ext = filename.split('.').pop() || contentType.split('/')[1] || 'jpg'
-  // Use UUID for unique file names (matching api-v1 pattern)
-  const key = `images/${uuid()}.${ext}`
+  // Per-blog folder: blogs/{postId}/images/ or blogs/draft/{sessionId}/images/ for new posts
+  const folderPrefix = postId
+    ? `blogs/${postId}/images`
+    : `blogs/draft/${sessionId || 'temp'}/images`
+  const key = `${folderPrefix}/${uuid()}.${ext}`
 
   logger.s3('GENERATING_PRESIGNED_URL', { 
     bucket: BUCKET_NAME, 
@@ -85,4 +94,63 @@ export async function getPresignedUploadUrl(filename, contentType) {
   })
 
   return { uploadUrl, imageUrl, key }
+}
+
+/**
+ * List images in a blog's folder for Media Library
+ * @param {string} postId - Blog post ID
+ * @param {string} [sessionId] - Session ID for draft posts (no postId)
+ * @returns {Promise<Array<{key: string, url: string, filename: string}>>}
+ */
+export async function listBlogImages(postId, sessionId) {
+  if (!isS3Configured() || !s3Client || !BUCKET_NAME) {
+    throw new Error('S3 is not configured')
+  }
+
+  const prefix = postId
+    ? `blogs/${postId}/images/`
+    : sessionId
+      ? `blogs/draft/${sessionId}/images/`
+      : null
+
+  if (!prefix) {
+    return []
+  }
+
+  const result = await s3Client.send(new ListObjectsV2Command({
+    Bucket: BUCKET_NAME,
+    Prefix: prefix,
+    MaxKeys: 100,
+  }))
+
+  const baseUrl = `https://${BUCKET_NAME}.s3.${AWS_REGION}.amazonaws.com`
+  const items = (result.Contents || [])
+    .filter((obj) => obj.Key && !obj.Key.endsWith('/'))
+    .map((obj) => ({
+      key: obj.Key,
+      url: `${baseUrl}/${obj.Key}`,
+      filename: obj.Key.split('/').pop() || obj.Key,
+    }))
+    .sort((a, b) => (b.key.localeCompare(a.key))) // newest first
+
+  return items
+}
+
+/**
+ * Delete a single image from S3 (Media Library "delete from storage")
+ * @param {string} key - S3 object key (e.g. blogs/123/images/uuid.jpg)
+ * @throws {Error} if key is not under blogs/ prefix or S3 not configured
+ */
+export async function deleteBlogImage(key) {
+  if (!isS3Configured() || !s3Client || !BUCKET_NAME) {
+    throw new Error('S3 is not configured')
+  }
+  if (!key || typeof key !== 'string' || !key.startsWith('blogs/')) {
+    throw new Error('Invalid key: must be an S3 object key under blogs/')
+  }
+  await s3Client.send(new DeleteObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+  }))
+  logger.s3('OBJECT_DELETED', { key, bucket: BUCKET_NAME })
 }
