@@ -85,7 +85,7 @@ export default function MediaLibraryModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-[600px] max-h-[90vh] flex flex-col"
+        className="bg-white rounded-lg shadow-xl w-full max-w-[600px] max-h-[85vh] sm:max-h-[90vh] flex flex-col mx-2 sm:mx-4"
         onClick={(e) => e.stopPropagation()}
         role="document"
       >

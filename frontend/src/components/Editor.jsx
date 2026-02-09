@@ -4,8 +4,10 @@ import StarterKit from '@tiptap/starter-kit'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import Underline from '@tiptap/extension-underline'
+import Link from '@tiptap/extension-link'
 import { FontSize } from '../extensions/FontSize'
 import { ImageResize } from '../extensions/ImageResize'
+import { YouTube } from '../extensions/YouTube'
 import Toolbar from './Toolbar'
 import ImageBubbleMenu from './ImageBubbleMenu'
 import MediaLibraryModal from './MediaLibraryModal'
@@ -131,9 +133,11 @@ export default function Editor({ content, onChange, onImageUpload, postId, sessi
     extensions: [
       StarterKit,
       ImageResize,
+      YouTube,
       TextStyle,
       Color,
       Underline,
+      Link.configure({ openOnClick: false }),
       FontSize,
     ],
     content: content || '',
@@ -195,7 +199,7 @@ export default function Editor({ content, onChange, onImageUpload, postId, sessi
   }
 
   return (
-    <div className="border border-gray-300 rounded-lg overflow-hidden">
+    <div className="border border-gray-300 rounded-lg overflow-visible">
       <Toolbar
         editor={editor}
         onImageUpload={handleImageUpload}
@@ -207,7 +211,9 @@ export default function Editor({ content, onChange, onImageUpload, postId, sessi
         postId={postId}
         sessionId={sessionId}
       />
-      <EditorContent editor={editor} className="min-h-[400px] bg-white" />
+      <div className="relative z-0 pt-4 bg-white">
+        <EditorContent editor={editor} className="min-h-[240px] sm:min-h-[400px]" />
+      </div>
       <ImageBubbleMenu
         editor={editor}
         onReplaceClick={() => {

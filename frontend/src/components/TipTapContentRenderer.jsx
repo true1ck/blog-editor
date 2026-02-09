@@ -1,4 +1,5 @@
 import React from 'react'
+import { getYouTubeEmbedUrl } from '../extensions/YouTube'
 
 /**
  * Renders TipTap JSON content as HTML matching Android styling
@@ -59,6 +60,11 @@ function RenderNode({ node }) {
     case 'image':
       return (
         <ImageNode attrs={attrs} />
+      )
+
+    case 'youtube':
+      return (
+        <YoutubeNode attrs={attrs} />
       )
 
     case 'blockquote':
@@ -124,12 +130,12 @@ function HeadingNode({ level, content, marks }) {
   if (!textContent.trim()) return null
 
   const headingClasses = {
-    1: 'text-3xl font-bold mb-4 mt-6',
-    2: 'text-2xl font-bold mb-4 mt-6',
-    3: 'text-xl font-bold mb-3 mt-5',
-    4: 'text-lg font-bold mb-3 mt-4',
-    5: 'text-base font-bold mb-2 mt-3',
-    6: 'text-sm font-bold mb-2 mt-3'
+    1: 'text-3xl font-bold mb-3 mt-3',
+    2: 'text-2xl font-bold mb-3 mt-3',
+    3: 'text-xl font-bold mb-3 mt-3',
+    4: 'text-lg font-bold mb-3 mt-3',
+    5: 'text-base font-bold mb-3 mt-3',
+    6: 'text-sm font-bold mb-3 mt-3'
   }
 
   const Tag = `h${level}`
@@ -183,26 +189,44 @@ function ListItemNode({ content, marks }) {
   )
 }
 
+function YoutubeNode({ attrs }) {
+  const videoId = attrs?.videoId
+  if (!videoId) return null
+  const embedUrl = getYouTubeEmbedUrl(videoId)
+  return (
+    <div className="my-3 mx-auto rounded-lg overflow-hidden aspect-video w-full max-w-[640px]">
+      <iframe
+        src={embedUrl}
+        title="YouTube video"
+        className="w-full h-full border-0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
+      />
+    </div>
+  )
+}
+
 function ImageNode({ attrs }) {
   const { src, alt = '', title = null, width, height, align } = attrs
 
   if (!src) return null
 
+  const showCaption = title && String(title).toLowerCase() !== 'null'
   const alignClass = align === 'left' ? 'mr-auto' : align === 'right' ? 'ml-auto' : 'mx-auto'
-  const style = {}
-  if (width) style.width = `${width}px`
-  if (height) style.height = `${height}px`
+  // In read-only view (preview/app), images fill container width so they don't appear small and centered.
+  // Stored width/height are not applied so layout is responsive; alignment still respected.
+  const style = { width: '100%', maxWidth: '100%', height: 'auto' }
 
   return (
-    <div className={`mb-4 block ${alignClass}`}>
+    <div className={`my-2 block w-full ${alignClass}`}>
       <img
         src={src}
         alt={alt}
-        className="max-w-full h-auto rounded-lg"
-        style={Object.keys(style).length ? style : undefined}
+        className="max-w-full h-auto rounded-lg block"
+        style={style}
       />
-      {title && (
-        <p className="text-sm text-gray-500 text-center mt-2">
+      {showCaption && (
+        <p className="text-sm text-gray-500 text-center mt-1">
           {title}
         </p>
       )}
@@ -232,7 +256,7 @@ function CodeBlockNode({ content }) {
 
 function HorizontalRuleNode() {
   return (
-    <hr className="my-4 border-gray-200 opacity-30" />
+    <hr className="my-3 border-gray-200 opacity-30" />
   )
 }
 
@@ -265,6 +289,17 @@ function TextNode({ text, marks = [] }) {
         if (fontSize) style.fontSize = fontSize
         element = <span style={style}>{element}</span>
         break
+      case 'link': {
+        const href = mark.attrs?.href
+        if (href) {
+          element = (
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline hover:text-indigo-800">
+              {element}
+            </a>
+          )
+        }
+        break
+      }
       case 'code':
         element = <code className="bg-gray-100 px-1 rounded text-sm font-mono">{element}</code>
         break

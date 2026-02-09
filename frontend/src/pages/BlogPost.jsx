@@ -6,6 +6,7 @@ import Image from '@tiptap/extension-image'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import Underline from '@tiptap/extension-underline'
+import Link from '@tiptap/extension-link'
 import { FontSize } from '../extensions/FontSize'
 import api from '../utils/api'
 
@@ -21,6 +22,10 @@ export default function BlogPost() {
       TextStyle,
       Color,
       Underline,
+      Link.configure({
+        openOnClick: true,
+        HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
+      }),
       FontSize,
     ],
     content: null,
@@ -59,10 +64,10 @@ export default function BlogPost() {
 
   if (!post) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Post not found</h1>
-          <p className="text-gray-600">The post you're looking for doesn't exist.</p>
+      <div className="flex items-center justify-center min-h-screen px-4">
+        <div className="text-center max-w-md">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">Post not found</h1>
+          <p className="text-gray-600 text-sm sm:text-base">The post you're looking for doesn't exist.</p>
         </div>
       </div>
     )
@@ -70,9 +75,9 @@ export default function BlogPost() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">{post.title}</h1>
+      <article className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12">
+        <header className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 break-words">{post.title}</h1>
           <div className="text-sm text-gray-500">
             Published on {new Date(post.created_at).toLocaleDateString('en-US', {
               year: 'numeric',
@@ -82,7 +87,7 @@ export default function BlogPost() {
           </div>
         </header>
 
-        <div className="bg-white rounded-lg shadow-sm p-8">
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 md:p-8 overflow-x-hidden">
           {editor && <EditorContent editor={editor} />}
         </div>
       </article>

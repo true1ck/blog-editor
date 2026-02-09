@@ -48,14 +48,14 @@ export default function MobilePreview({ title, content, createdAt }) {
           <h2 className="text-lg font-semibold text-gray-900">Blog Post</h2>
         </div>
 
-        {/* Scrollable Content Area */}
+        {/* Scrollable Content Area - layout matches Android BlogDetailScreen (see blog layout spec) */}
         <div className="flex-1 overflow-y-auto">
-          {/* Header Section with Title and Date */}
-          <div className="px-4 py-6">
+          {/* Header: 16px horizontal, 24px vertical; 12px gap between title and date */}
+          <div className="px-4 pt-6 pb-6">
             <h1 className="text-3xl font-bold text-gray-900 mb-3 leading-tight">
               {title || 'Untitled Post'}
             </h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-600">
               {formattedDate}
             </p>
           </div>
@@ -65,8 +65,8 @@ export default function MobilePreview({ title, content, createdAt }) {
             <hr className="border-gray-200" />
           </div>
 
-          {/* Content Section */}
-          <div className="px-4 py-6">
+          {/* Content: 16px horizontal only, 24px gap after divider */}
+          <div className="px-4 pt-6">
             {content ? (
               <TipTapContentRenderer content={content} />
             ) : (
@@ -76,7 +76,7 @@ export default function MobilePreview({ title, content, createdAt }) {
             )}
           </div>
 
-          {/* Bottom padding for better scrolling */}
+          {/* Bottom padding for scroll (32px) */}
           <div className="h-8" />
         </div>
       </div>
