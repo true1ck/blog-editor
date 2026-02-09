@@ -11,6 +11,8 @@ export default function EditorPage() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState(null)
   const [createdAt, setCreatedAt] = useState(null)
+  const [contentType, setContentType] = useState('tiptap') // 'tiptap' | 'link'
+  const [externalUrl, setExternalUrl] = useState('')
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -33,40 +35,58 @@ export default function EditorPage() {
     }
   }, [id])
 
+  // Build post payload based on content type
+  const buildPostData = useCallback((overrides = {}) => {
+    const isLink = contentType === 'link'
+    const base = {
+      title: title?.trim() || 'Untitled',
+      status: overrides.status ?? 'draft',
+    }
+    if (isLink) {
+      return {
+        ...base,
+        content_type: 'link',
+        external_url: externalUrl.trim(),
+        content_json: {},
+        ...overrides,
+      }
+    }
+    return {
+      ...base,
+      content_json: content || {},
+      ...overrides,
+    }
+  }, [title, content, contentType, externalUrl])
+
   // Debounced auto-save function
   const handleAutoSave = useCallback(async () => {
-    // Don't save if nothing has changed
-    if (!title && !content) return
-    // Don't save during initial load
     if (isInitialLoadRef.current) return
+    const isLink = contentType === 'link'
+    if (isLink) {
+      if (!title?.trim() || !externalUrl?.trim()) return
+    } else {
+      if (!title && !content) return
+    }
 
     try {
       setSaving(true)
-      const postData = {
-        title: title || 'Untitled',
-        content_json: content || {},
-        status: 'draft',
-      }
+      const postData = buildPostData({ status: 'draft' })
 
       let postId = currentPostIdRef.current
       if (postId) {
-        // Update existing post
         await api.put(`/posts/${postId}`, postData)
       } else {
-        // Create new post
         const res = await api.post('/posts', postData)
         postId = res.data.id
         currentPostIdRef.current = postId
-        // Update URL without reload
         window.history.replaceState({}, '', `/editor/${postId}`)
       }
     } catch (error) {
       console.error('Auto-save failed:', error)
-      // Don't show error toast for auto-save failures to avoid annoying user
     } finally {
       setSaving(false)
     }
-  }, [title, content])
+  }, [title, content, contentType, externalUrl, buildPostData])
 
   // Debounced save on content change
   useEffect(() => {
@@ -91,7 +111,7 @@ export default function EditorPage() {
         clearTimeout(autoSaveTimeoutRef.current)
       }
     }
-  }, [title, content, handleAutoSave])
+  }, [title, content, contentType, externalUrl, handleAutoSave])
 
   const fetchPost = async () => {
     try {
@@ -100,6 +120,8 @@ export default function EditorPage() {
       setTitle(post.title || '')
       setContent(post.content_json || null)
       setCreatedAt(post.created_at || null)
+      setContentType(post.content_type === 'link' ? 'link' : 'tiptap')
+      setExternalUrl(post.external_url || '')
       isInitialLoadRef.current = true // Reset after loading
     } catch (error) {
       toast.error('Failed to load post')
@@ -119,18 +141,22 @@ export default function EditorPage() {
       return
     }
 
-    if (!content) {
-      toast.error('Please add some content')
-      return
+    if (contentType === 'link') {
+      const url = externalUrl.trim()
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        toast.error('Please enter a valid URL (http:// or https://)')
+        return
+      }
+    } else {
+      if (!content) {
+        toast.error('Please add some content')
+        return
+      }
     }
 
     try {
       setSaving(true)
-      const postData = {
-        title: title.trim(),
-        content_json: content,
-        status: 'published',
-      }
+      const postData = buildPostData({ status: 'published' })
 
       let postId = currentPostIdRef.current || id
       if (postId) {
@@ -209,6 +235,31 @@ export default function EditorPage() {
         {/* Main Editor Section */}
         <main className={`flex-1 overflow-y-auto transition-all duration-300 min-h-0 ${showPreview ? 'lg:border-r lg:border-gray-200' : ''}`}>
           <div className="max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+            {/* Post type selector */}
+            <div className="mb-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setContentType('tiptap')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  contentType === 'tiptap'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Article
+              </button>
+              <button
+                type="button"
+                onClick={() => setContentType('link')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  contentType === 'link'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Link
+              </button>
+            </div>
             {/* Card-style editor block */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
               <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
@@ -221,23 +272,37 @@ export default function EditorPage() {
                   className="w-full text-xl sm:text-2xl font-bold p-2 border-0 border-b-2 border-transparent hover:border-gray-200 focus:outline-none focus:border-indigo-500 bg-transparent transition-colors"
                 />
               </div>
-              <div className="px-2">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide px-2 sm:px-4 pt-4 pb-1">Content</label>
-                <Editor
-                  content={content}
-                  onChange={setContent}
-                  postId={id || currentPostIdRef.current}
-                  sessionId={!id ? sessionIdRef.current : null}
-                />
-              </div>
+              {contentType === 'link' ? (
+                <div className="px-4 sm:px-6 pb-6">
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={externalUrl}
+                    onChange={(e) => setExternalUrl(e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">The page readers will see when they open this post.</p>
+                </div>
+              ) : (
+                <div className="px-2">
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide px-2 sm:px-4 pt-4 pb-1">Content</label>
+                  <Editor
+                    content={content}
+                    onChange={setContent}
+                    postId={id || currentPostIdRef.current}
+                    sessionId={!id ? sessionIdRef.current : null}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </main>
 
         {/* Mobile Preview - sidebar on lg+, full-width panel on smaller screens */}
         {showPreview && (
-          <aside className="bg-gray-50 border-t lg:border-t-0 lg:border-l border-gray-200 flex-shrink-0 w-full lg:w-[380px] flex flex-col min-h-[320px] lg:min-h-0 lg:max-h-full overflow-hidden">
-            <div className="flex-1 min-h-0 p-3 sm:p-4 overflow-auto">
+          <aside className="bg-gray-50 border-t lg:border-t-0 lg:border-l border-gray-200 flex-shrink-0 w-full lg:w-[380px] flex flex-col lg:min-h-0 lg:max-h-full overflow-hidden">
+            <div className="p-3 sm:p-4 overflow-auto">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Mobile Preview</span>
                 <button
@@ -251,11 +316,21 @@ export default function EditorPage() {
                   </svg>
                 </button>
               </div>
-              <MobilePreview
-                title={title}
-                content={content}
-                createdAt={createdAt}
-              />
+              {contentType === 'link' ? (
+                <div className="rounded-lg border border-gray-200 bg-white p-4">
+                  <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Link</span>
+                  <p className="mt-2 font-semibold text-gray-900">{title || 'Untitled'}</p>
+                  {externalUrl && (
+                    <p className="mt-1 text-sm text-gray-500 break-all">Opens: {externalUrl}</p>
+                  )}
+                </div>
+              ) : (
+                <MobilePreview
+                  title={title}
+                  content={content}
+                  createdAt={createdAt}
+                />
+              )}
             </div>
           </aside>
         )}

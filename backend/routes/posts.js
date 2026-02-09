@@ -5,12 +5,21 @@ import logger from '../utils/logger.js'
 
 const router = express.Router()
 
+const MAX_EXTERNAL_URL_LENGTH = 2048
+
+function isValidExternalUrl(url) {
+  if (typeof url !== 'string') return false
+  const trimmed = url.trim()
+  if (!trimmed || trimmed.length > MAX_EXTERNAL_URL_LENGTH) return false
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://')
+}
+
 // Get all posts for current user
 // Note: authenticateToken middleware is applied at server level, so req.user is available
 router.get('/', async (req, res) => {
   try {
     logger.transaction('FETCH_POSTS', { userId: req.user.id })
-    const query = 'SELECT id, title, slug, status, created_at, updated_at FROM posts WHERE user_id = $1 ORDER BY updated_at DESC'
+    const query = 'SELECT id, title, slug, status, content_type, external_url, created_at, updated_at FROM posts WHERE user_id = $1 ORDER BY updated_at DESC'
     logger.db('SELECT', query, [req.user.id])
     
     const result = await pool.query(query, [req.user.id])
@@ -85,36 +94,53 @@ router.get('/slug/:slug', async (req, res) => {
 // Create post
 router.post('/', async (req, res) => {
   try {
-    const { title, content_json, status } = req.body
+    const { title, content_json, content_type, external_url, status } = req.body
 
     logger.transaction('CREATE_POST', { 
       userId: req.user.id, 
       title: title?.substring(0, 50),
-      status: status || 'draft'
+      status: status || 'draft',
+      content_type: content_type || 'tiptap'
     })
 
-    if (!title || !content_json) {
-      logger.warn('POSTS', 'Missing required fields', { 
-        hasTitle: !!title, 
-        hasContent: !!content_json 
-      })
-      return res.status(400).json({ message: 'Title and content are required' })
+    const isLinkPost = content_type === 'link'
+
+    if (isLinkPost) {
+      if (!title || typeof title !== 'string' || !title.trim()) {
+        return res.status(400).json({ message: 'Title is required' })
+      }
+      if (!external_url || !isValidExternalUrl(external_url)) {
+        return res.status(400).json({ message: 'Valid external URL is required (http:// or https://, max 2048 characters)' })
+      }
+    } else {
+      if (!title || !content_json) {
+        logger.warn('POSTS', 'Missing required fields', { 
+          hasTitle: !!title, 
+          hasContent: !!content_json 
+        })
+        return res.status(400).json({ message: 'Title and content are required' })
+      }
     }
 
     const slug = slugify(title, { lower: true, strict: true }) + '-' + Date.now()
     const postStatus = status || 'draft'
+    const contentType = isLinkPost ? 'link' : (content_type || 'tiptap')
+    const contentJson = isLinkPost ? {} : content_json
+    const externalUrl = isLinkPost ? external_url.trim() : null
 
-    const query = `INSERT INTO posts (user_id, title, content_json, slug, status)
-       VALUES ($1, $2, $3, $4, $5)
+    const query = `INSERT INTO posts (user_id, title, content_json, slug, status, content_type, external_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`
-    logger.db('INSERT', query, [req.user.id, title, '[content_json]', slug, postStatus])
+    logger.db('INSERT', query, [req.user.id, title, '[content_json]', slug, postStatus, contentType, externalUrl])
 
     const result = await pool.query(query, [
       req.user.id, 
       title, 
-      JSON.stringify(content_json), 
+      JSON.stringify(contentJson), 
       slug, 
-      postStatus
+      postStatus,
+      contentType,
+      externalUrl
     ])
 
     logger.transaction('CREATE_POST_SUCCESS', { 
@@ -132,7 +158,7 @@ router.post('/', async (req, res) => {
 // Update post
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content_json, status } = req.body
+    const { title, content_json, content_type, external_url, status } = req.body
 
     logger.transaction('UPDATE_POST', { 
       postId: req.params.id, 
@@ -140,7 +166,9 @@ router.put('/:id', async (req, res) => {
       updates: {
         title: title !== undefined,
         content: content_json !== undefined,
-        status: status !== undefined
+        status: status !== undefined,
+        content_type: content_type !== undefined,
+        external_url: external_url !== undefined
       }
     })
 
@@ -156,6 +184,14 @@ router.put('/:id', async (req, res) => {
         userId: req.user.id 
       })
       return res.status(404).json({ message: 'Post not found' })
+    }
+
+    const isLinkUpdate = content_type === 'link'
+    if (external_url !== undefined && isLinkUpdate && !isValidExternalUrl(external_url)) {
+      return res.status(400).json({ message: 'Valid external URL is required (http:// or https://, max 2048 characters)' })
+    }
+    if (content_type === 'link' && external_url === undefined) {
+      return res.status(400).json({ message: 'external_url is required when content_type is link' })
     }
 
     // Build update query dynamically
@@ -176,6 +212,20 @@ router.put('/:id', async (req, res) => {
     if (status !== undefined) {
       updates.push(`status = $${paramCount++}`)
       values.push(status)
+    }
+
+    if (content_type !== undefined) {
+      updates.push(`content_type = $${paramCount++}`)
+      values.push(content_type)
+    }
+
+    // When content_type is set to non-link, clear external_url; when link, set URL
+    if (content_type !== undefined) {
+      updates.push(`external_url = $${paramCount++}`)
+      values.push(content_type === 'link' && external_url !== undefined ? external_url.trim() : null)
+    } else if (external_url !== undefined) {
+      updates.push(`external_url = $${paramCount++}`)
+      values.push(external_url.trim())
     }
 
     // Update slug if title changed

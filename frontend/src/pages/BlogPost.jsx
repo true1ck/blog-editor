@@ -6,7 +6,7 @@ import Image from '@tiptap/extension-image'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import Underline from '@tiptap/extension-underline'
-import Link from '@tiptap/extension-link'
+import { Link } from '../extensions/Link'
 import { FontSize } from '../extensions/FontSize'
 import api from '../utils/api'
 
@@ -48,13 +48,21 @@ export default function BlogPost() {
   }, [post, editor])
 
   const fetchPost = async () => {
+    let redirecting = false
     try {
       const res = await api.get(`/posts/slug/${slug}`)
-      setPost(res.data)
+      const data = res.data
+      // Link post: redirect to external URL so reader sees the same page as in app
+      if (data.content_type === 'link' && data.external_url) {
+        redirecting = true
+        window.location.href = data.external_url
+        return
+      }
+      setPost(data)
     } catch (error) {
-      console.error('Failed to load post:', error)
+      console.error('Failed to load post', error)
     } finally {
-      setLoading(false)
+      if (!redirecting) setLoading(false)
     }
   }
 

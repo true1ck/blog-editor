@@ -104,15 +104,22 @@ export default function Dashboard() {
                   <h3 className="text-base sm:text-lg font-semibold text-gray-900 line-clamp-2 min-w-0">
                     {post.title || 'Untitled'}
                   </h3>
-                  <span
-                    className={`px-2 py-1 text-xs rounded flex-shrink-0 ${
-                      post.status === 'published'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {post.status}
-                  </span>
+                  <div className="flex flex-shrink-0 items-center gap-1.5 flex-wrap justify-end">
+                    {post.content_type === 'link' && (
+                      <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
+                        Link
+                      </span>
+                    )}
+                    <span
+                      className={`px-2 py-1 text-xs rounded ${
+                        post.status === 'published'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {post.status}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-sm text-gray-500 mb-4">
                   {new Date(post.updated_at).toLocaleDateString()}
@@ -125,13 +132,24 @@ export default function Dashboard() {
                     Edit
                   </Link>
                   {post.status === 'published' && (
-                    <Link
-                      to={`/blog/${post.slug}`}
-                      target="_blank"
-                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
-                    >
-                      View
-                    </Link>
+                    post.content_type === 'link' && post.external_url ? (
+                      <a
+                        href={post.external_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
+                      >
+                        View
+                      </a>
+                    ) : (
+                      <Link
+                        to={`/blog/${post.slug}`}
+                        target="_blank"
+                        className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
+                      >
+                        View
+                      </Link>
+                    )
                   )}
                   <button
                     onClick={() => handlePublish(post)}
