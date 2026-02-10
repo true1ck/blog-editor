@@ -19,7 +19,7 @@ function isValidExternalUrl(url) {
 router.get('/', async (req, res) => {
   try {
     logger.transaction('FETCH_POSTS', { userId: req.user.id })
-    const query = 'SELECT id, title, slug, status, content_type, external_url, created_at, updated_at FROM posts WHERE user_id = $1 ORDER BY updated_at DESC'
+    const query = 'SELECT id, title, slug, status, content_type, external_url, thumbnail_url, excerpt, created_at, updated_at FROM posts WHERE user_id = $1 ORDER BY updated_at DESC'
     logger.db('SELECT', query, [req.user.id])
     
     const result = await pool.query(query, [req.user.id])
@@ -94,7 +94,7 @@ router.get('/slug/:slug', async (req, res) => {
 // Create post
 router.post('/', async (req, res) => {
   try {
-    const { title, content_json, content_type, external_url, status } = req.body
+    const { title, content_json, content_type, external_url, status, thumbnail_url, excerpt } = req.body
 
     logger.transaction('CREATE_POST', { 
       userId: req.user.id, 
@@ -128,10 +128,22 @@ router.post('/', async (req, res) => {
     const contentJson = isLinkPost ? {} : content_json
     const externalUrl = isLinkPost ? external_url.trim() : null
 
-    const query = `INSERT INTO posts (user_id, title, content_json, slug, status, content_type, external_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+    const thumbnailUrl = thumbnail_url && typeof thumbnail_url === 'string' ? thumbnail_url.trim() || null : null
+    const excerptVal = excerpt != null && typeof excerpt === 'string' ? excerpt.trim().slice(0, 500) || null : null
+
+    if (postStatus === 'published') {
+      if (!thumbnailUrl) {
+        return res.status(400).json({ message: 'Thumbnail is required to publish. Add a post thumbnail first.' })
+      }
+      if (!excerptVal) {
+        return res.status(400).json({ message: 'List description (excerpt) is required to publish.' })
+      }
+    }
+
+    const query = `INSERT INTO posts (user_id, title, content_json, slug, status, content_type, external_url, thumbnail_url, excerpt)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`
-    logger.db('INSERT', query, [req.user.id, title, '[content_json]', slug, postStatus, contentType, externalUrl])
+    logger.db('INSERT', query, [req.user.id, title, '[content_json]', slug, postStatus, contentType, externalUrl, thumbnailUrl, excerptVal])
 
     const result = await pool.query(query, [
       req.user.id, 
@@ -140,7 +152,9 @@ router.post('/', async (req, res) => {
       slug, 
       postStatus,
       contentType,
-      externalUrl
+      externalUrl,
+      thumbnailUrl,
+      excerptVal
     ])
 
     logger.transaction('CREATE_POST_SUCCESS', { 
@@ -158,7 +172,7 @@ router.post('/', async (req, res) => {
 // Update post
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content_json, content_type, external_url, status } = req.body
+    const { title, content_json, content_type, external_url, status, thumbnail_url, excerpt } = req.body
 
     logger.transaction('UPDATE_POST', { 
       postId: req.params.id, 
@@ -168,17 +182,21 @@ router.put('/:id', async (req, res) => {
         content: content_json !== undefined,
         status: status !== undefined,
         content_type: content_type !== undefined,
-        external_url: external_url !== undefined
+        external_url: external_url !== undefined,
+        thumbnail_url: thumbnail_url !== undefined,
+        excerpt: excerpt !== undefined
       }
     })
 
-    // Check if post exists and belongs to user
-    const checkQuery = 'SELECT id FROM posts WHERE id = $1 AND user_id = $2'
+    // Check if post exists and belongs to user (fetch thumbnail/excerpt when publishing)
+    const checkQuery = status === 'published'
+      ? 'SELECT id, thumbnail_url, excerpt FROM posts WHERE id = $1 AND user_id = $2'
+      : 'SELECT id FROM posts WHERE id = $1 AND user_id = $2'
     logger.db('SELECT', checkQuery, [req.params.id, req.user.id])
-    
-    const existingPost = await pool.query(checkQuery, [req.params.id, req.user.id])
+    const existingResult = await pool.query(checkQuery, [req.params.id, req.user.id])
+    const existingPost = existingResult.rows[0]
 
-    if (existingPost.rows.length === 0) {
+    if (!existingPost) {
       logger.warn('POSTS', 'Post not found for update', { 
         postId: req.params.id, 
         userId: req.user.id 
@@ -192,6 +210,22 @@ router.put('/:id', async (req, res) => {
     }
     if (content_type === 'link' && external_url === undefined) {
       return res.status(400).json({ message: 'external_url is required when content_type is link' })
+    }
+
+    // When publishing, require thumbnail and excerpt (use existing if not in body)
+    if (status === 'published') {
+      const finalThumbnail = thumbnail_url !== undefined
+        ? (thumbnail_url && typeof thumbnail_url === 'string' ? thumbnail_url.trim() || null : null)
+        : (existingPost.thumbnail_url ?? null)
+      const finalExcerpt = excerpt !== undefined
+        ? (excerpt != null && typeof excerpt === 'string' ? excerpt.trim().slice(0, 500) || null : null)
+        : (existingPost.excerpt ?? null)
+      if (!finalThumbnail) {
+        return res.status(400).json({ message: 'Thumbnail is required to publish. Add a post thumbnail first.' })
+      }
+      if (!finalExcerpt) {
+        return res.status(400).json({ message: 'List description (excerpt) is required to publish.' })
+      }
     }
 
     // Build update query dynamically
@@ -233,6 +267,16 @@ router.put('/:id', async (req, res) => {
       const slug = slugify(title, { lower: true, strict: true }) + '-' + Date.now()
       updates.push(`slug = $${paramCount++}`)
       values.push(slug)
+    }
+
+    if (thumbnail_url !== undefined) {
+      updates.push(`thumbnail_url = $${paramCount++}`)
+      values.push(thumbnail_url && typeof thumbnail_url === 'string' ? thumbnail_url.trim() || null : null)
+    }
+
+    if (excerpt !== undefined) {
+      updates.push(`excerpt = $${paramCount++}`)
+      values.push(excerpt != null && typeof excerpt === 'string' ? excerpt.trim().slice(0, 500) || null : null)
     }
 
     updates.push(`updated_at = NOW()`)

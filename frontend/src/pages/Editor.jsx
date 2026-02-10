@@ -13,8 +13,12 @@ export default function EditorPage() {
   const [createdAt, setCreatedAt] = useState(null)
   const [contentType, setContentType] = useState('tiptap') // 'tiptap' | 'link'
   const [externalUrl, setExternalUrl] = useState('')
+  const [thumbnailUrl, setThumbnailUrl] = useState('')
+  const [excerpt, setExcerpt] = useState('')
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false)
+  const thumbnailInputRef = useRef(null)
   const [showPreview, setShowPreview] = useState(false)
   const autoSaveTimeoutRef = useRef(null)
   const isInitialLoadRef = useRef(true)
@@ -41,6 +45,8 @@ export default function EditorPage() {
     const base = {
       title: title?.trim() || 'Untitled',
       status: overrides.status ?? 'draft',
+      thumbnail_url: thumbnailUrl?.trim() || null,
+      excerpt: excerpt?.trim()?.slice(0, 250) || null,
     }
     if (isLink) {
       return {
@@ -56,7 +62,7 @@ export default function EditorPage() {
       content_json: content || {},
       ...overrides,
     }
-  }, [title, content, contentType, externalUrl])
+  }, [title, content, contentType, externalUrl, thumbnailUrl, excerpt])
 
   // Debounced auto-save function
   const handleAutoSave = useCallback(async () => {
@@ -111,7 +117,7 @@ export default function EditorPage() {
         clearTimeout(autoSaveTimeoutRef.current)
       }
     }
-  }, [title, content, contentType, externalUrl, handleAutoSave])
+  }, [title, content, contentType, externalUrl, thumbnailUrl, excerpt, handleAutoSave])
 
   const fetchPost = async () => {
     try {
@@ -122,6 +128,8 @@ export default function EditorPage() {
       setCreatedAt(post.created_at || null)
       setContentType(post.content_type === 'link' ? 'link' : 'tiptap')
       setExternalUrl(post.external_url || '')
+      setThumbnailUrl(post.thumbnail_url || '')
+      setExcerpt(post.excerpt || '')
       isInitialLoadRef.current = true // Reset after loading
     } catch (error) {
       toast.error('Failed to load post')
@@ -135,9 +143,69 @@ export default function EditorPage() {
     }
   }
 
+  const postIdForThumbnail = id || currentPostIdRef.current
+
+  const handleThumbnailUpload = async (file) => {
+    if (!file?.type?.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5MB')
+      return
+    }
+    if (!postIdForThumbnail) {
+      toast.error('Save draft first to add a thumbnail')
+      return
+    }
+    try {
+      setUploadingThumbnail(true)
+      toast.loading('Uploading thumbnail...', { id: 'thumbnail' })
+      const res = await api.post('/upload/presigned-url', {
+        filename: file.name,
+        contentType: file.type,
+        postId: postIdForThumbnail,
+        purpose: 'thumbnail',
+      })
+      const { uploadUrl, imageUrl } = res.data
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      })
+      if (!putRes.ok) {
+        throw new Error('Upload failed')
+      }
+      setThumbnailUrl(imageUrl)
+      await api.put(`/posts/${postIdForThumbnail}`, buildPostData({ thumbnail_url: imageUrl }))
+      toast.success('Thumbnail saved', { id: 'thumbnail' })
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to upload thumbnail', { id: 'thumbnail' })
+    } finally {
+      setUploadingThumbnail(false)
+    }
+  }
+
+  const handleRemoveThumbnail = () => {
+    setThumbnailUrl('')
+    if (postIdForThumbnail) {
+      api.put(`/posts/${postIdForThumbnail}`, { ...buildPostData(), thumbnail_url: null }).catch(() => {})
+    }
+  }
+
   const handlePublish = async () => {
     if (!title.trim()) {
       toast.error('Please enter a title')
+      return
+    }
+
+    if (!thumbnailUrl?.trim()) {
+      toast.error('Please add a post thumbnail before publishing')
+      return
+    }
+
+    if (!excerpt?.trim()) {
+      toast.error('Please add a list description before publishing')
       return
     }
 
@@ -263,7 +331,7 @@ export default function EditorPage() {
             {/* Card-style editor block */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
               <div className="px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Title</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Title (required)</label>
                 <input
                   type="text"
                   placeholder="Enter post title..."
@@ -271,6 +339,64 @@ export default function EditorPage() {
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full text-xl sm:text-2xl font-bold p-2 border-0 border-b-2 border-transparent hover:border-gray-200 focus:outline-none focus:border-indigo-500 bg-transparent transition-colors"
                 />
+              </div>
+              {/* Post thumbnail - below title, only when post exists */}
+              <div className="px-4 sm:px-6 py-4 border-t border-gray-100">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Post thumbnail (required)</label>
+                {!postIdForThumbnail ? (
+                  <p className="text-sm text-gray-500 py-2">Save draft first to add a thumbnail. Required for publishing.</p>
+                ) : (
+                  <div className="flex flex-col sm:flex-row gap-4 items-start">
+                    {thumbnailUrl ? (
+                      <div className="relative flex-shrink-0">
+                        <img src={thumbnailUrl} alt="Thumbnail" className="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg border border-gray-200" />
+                        <button
+                          type="button"
+                          onClick={handleRemoveThumbnail}
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs flex items-center justify-center hover:bg-red-600"
+                          aria-label="Remove thumbnail"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : null}
+                    <div className="flex flex-col gap-1">
+                      <input
+                        ref={thumbnailInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          if (f) handleThumbnailUpload(f)
+                          e.target.value = ''
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingThumbnail}
+                        onClick={() => thumbnailInputRef.current?.click()}
+                        className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {uploadingThumbnail ? 'Uploading…' : thumbnailUrl ? 'Change thumbnail' : 'Choose image'}
+                      </button>
+                      <p className="text-xs text-gray-500">Square image recommended. Required for publishing.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {/* Optional excerpt for list description */}
+              <div className="px-4 sm:px-6 pb-4 border-t border-gray-100">
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">List description (required)</label>
+                <textarea
+                  placeholder="Short description for the blog list (1–2 lines). Required for publishing."
+                  value={excerpt}
+                  onChange={(e) => setExcerpt(e.target.value)}
+                  rows={2}
+                  maxLength={250}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm resize-none"
+                />
+                <p className="mt-1 text-xs text-gray-500">{excerpt.length}/250</p>
               </div>
               {contentType === 'link' ? (
                 <div className="px-4 sm:px-6 pb-6">

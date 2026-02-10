@@ -24,14 +24,15 @@ router.get('/media', async (req, res) => {
 // Note: authenticateToken middleware is applied at server level
 router.post('/presigned-url', async (req, res) => {
   try {
-    const { filename, contentType, postId, sessionId } = req.body
+    const { filename, contentType, postId, sessionId, purpose } = req.body
 
     logger.transaction('GENERATE_PRESIGNED_URL', { 
       userId: req.user.id,
       filename,
       contentType,
       postId,
-      sessionId
+      sessionId,
+      purpose
     })
 
     if (!filename || !contentType) {
@@ -40,6 +41,13 @@ router.post('/presigned-url', async (req, res) => {
         hasContentType: !!contentType 
       })
       return res.status(400).json({ message: 'Filename and content type are required' })
+    }
+
+    // Thumbnail upload requires postId (post must be saved first)
+    if (purpose === 'thumbnail' && !postId) {
+      return res.status(400).json({
+        message: 'Post ID is required to upload a thumbnail. Save the post as draft first.'
+      })
     }
 
     // Validate content type
@@ -66,7 +74,7 @@ router.post('/presigned-url', async (req, res) => {
     }
 
     const startTime = Date.now()
-    const { uploadUrl, imageUrl, key } = await getPresignedUploadUrl(filename, contentType, postId, sessionId)
+    const { uploadUrl, imageUrl, key } = await getPresignedUploadUrl(filename, contentType, postId, sessionId, purpose)
     const duration = Date.now() - startTime
 
     logger.s3('PRESIGNED_URL_GENERATED', {

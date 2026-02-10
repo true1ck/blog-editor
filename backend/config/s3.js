@@ -41,9 +41,10 @@ export { ListObjectsV2Command }
  * @param {string} contentType
  * @param {string} [postId] - Blog post ID for per-blog folder structure
  * @param {string} [sessionId] - Session ID for draft posts (no postId yet)
+ * @param {string} [purpose] - 'thumbnail' for post thumbnail (one per post at blogs/{postId}/thumbnail.{ext}); otherwise in-content image
  */
-export async function getPresignedUploadUrl(filename, contentType, postId, sessionId) {
-  logger.s3('PRESIGNED_URL_REQUEST', { filename, contentType, postId, sessionId })
+export async function getPresignedUploadUrl(filename, contentType, postId, sessionId, purpose) {
+  logger.s3('PRESIGNED_URL_REQUEST', { filename, contentType, postId, sessionId, purpose })
 
   if (!isS3Configured()) {
     logger.error('S3', 'S3 not configured', null)
@@ -60,13 +61,23 @@ export async function getPresignedUploadUrl(filename, contentType, postId, sessi
     throw new Error('S3 bucket name is not configured. Please set S3_BUCKET_NAME or AWS_BUCKET_NAME in .env file.')
   }
 
+  const isThumbnail = purpose === 'thumbnail'
+  if (isThumbnail && !postId) {
+    throw new Error('Post ID is required to upload a thumbnail. Save the post as draft first.')
+  }
+
   // Extract file extension from filename or content type
   const ext = filename.split('.').pop() || contentType.split('/')[1] || 'jpg'
-  // Per-blog folder: blogs/{postId}/images/ or blogs/draft/{sessionId}/images/ for new posts
-  const folderPrefix = postId
-    ? `blogs/${postId}/images`
-    : `blogs/draft/${sessionId || 'temp'}/images`
-  const key = `${folderPrefix}/${uuid()}.${ext}`
+  let key
+  if (isThumbnail) {
+    key = `blogs/${postId}/thumbnail.${ext}`
+  } else {
+    // Per-blog folder: blogs/{postId}/images/ or blogs/draft/{sessionId}/images/ for new posts
+    const folderPrefix = postId
+      ? `blogs/${postId}/images`
+      : `blogs/draft/${sessionId || 'temp'}/images`
+    key = `${folderPrefix}/${uuid()}.${ext}`
+  }
 
   logger.s3('GENERATING_PRESIGNED_URL', { 
     bucket: BUCKET_NAME, 
