@@ -691,9 +691,10 @@ export default function EditorPage() {
               )}
             </div>
 
-            {/* Always show dual-language layout - all content preserved */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* English Section */}
+            {/* Conditional language layout based on publish mode */}
+            <div className={`grid gap-4 ${publishMode === 'both' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+              {/* English Section - only show if publishMode is 'en' or 'both' */}
+              {(publishMode === 'en' || publishMode === 'both') && (
               <div className={`bg-white rounded-xl shadow-sm border-2 overflow-visible ${
                 publishMode === 'en' || publishMode === 'both' 
                   ? 'border-indigo-500 ring-2 ring-indigo-200' 
@@ -773,8 +774,10 @@ export default function EditorPage() {
                   )}
                 </div>
               </div>
+              )}
               
-              {/* Hindi Section */}
+              {/* Hindi Section - only show if publishMode is 'hi' or 'both' */}
+              {(publishMode === 'hi' || publishMode === 'both') && (
               <div className={`bg-white rounded-xl shadow-sm border-2 overflow-visible ${
                 publishMode === 'hi' || publishMode === 'both'
                   ? 'border-green-500 ring-2 ring-green-200'
@@ -854,6 +857,7 @@ export default function EditorPage() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         </main>

@@ -133,16 +133,16 @@ export default function Dashboard() {
             </Link>
           </div>
         ) : (
-          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 auto-rows-fr">
             {posts.map((postGroup) => {
               const post = postGroup.en || postGroup.hi
               if (!post) return null
               
               return (
-                <div key={postGroup.groupId} className="bg-white rounded-lg shadow p-4 sm:p-6">
+                <div key={postGroup.groupId} className="bg-white rounded-lg shadow p-4 sm:p-6 flex flex-col min-w-0">
                   {/* Display both language titles */}
                   <div className="mb-3 space-y-2">
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
                       <span className={`px-2 py-1 text-xs rounded font-medium flex-shrink-0 ${
                         postGroup.en?.status === 'published' 
                           ? 'bg-green-100 text-green-800' 
@@ -150,11 +150,11 @@ export default function Dashboard() {
                       }`}>
                         EN
                       </span>
-                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1">
+                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-1 flex-1 min-w-0 break-words">
                         {postGroup.en?.title || 'No English version'}
                       </h3>
                     </div>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
                       <span className={`px-2 py-1 text-xs rounded font-medium flex-shrink-0 ${
                         postGroup.hi?.status === 'published' 
                           ? 'bg-green-100 text-green-800' 
@@ -162,7 +162,7 @@ export default function Dashboard() {
                       }`}>
                         HI
                       </span>
-                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1">
+                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-1 flex-1 min-w-0 break-words">
                         {postGroup.hi?.title || 'No Hindi version'}
                       </h3>
                     </div>
@@ -170,18 +170,18 @@ export default function Dashboard() {
 
                   {/* Status badges */}
                   <div className="space-y-2 mb-4">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                       {post.content_type === 'link' && (
-                        <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-medium">
+                        <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-medium flex-shrink-0">
                           Link
                         </span>
                       )}
                       
                       {/* Show publish status for each language */}
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {postGroup.en && (
                           <span
-                            className={`px-2 py-1 text-xs rounded font-medium ${
+                            className={`px-2 py-1 text-xs rounded font-medium whitespace-nowrap ${
                               postGroup.en.status === 'published'
                                 ? 'bg-green-100 text-green-800'
                                 : 'bg-gray-100 text-gray-600'
@@ -193,7 +193,7 @@ export default function Dashboard() {
                         )}
                         {postGroup.hi && (
                           <span
-                            className={`px-2 py-1 text-xs rounded font-medium ${
+                            className={`px-2 py-1 text-xs rounded font-medium whitespace-nowrap ${
                               postGroup.hi.status === 'published'
                                 ? 'bg-green-100 text-green-800'
                                 : 'bg-gray-100 text-gray-600'
@@ -205,70 +205,112 @@ export default function Dashboard() {
                         )}
                       </div>
                       
-                      <span className="text-xs text-gray-500 ml-auto">
+                      <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
                         {new Date(post.updated_at).toLocaleDateString()}
                       </span>
                     </div>
                     
                     {/* Summary status message */}
-                    <div className="text-xs font-medium">
+                    <div className="text-xs font-medium min-w-0">
                       {(() => {
                         const enPublished = postGroup.en?.status === 'published'
                         const hiPublished = postGroup.hi?.status === 'published'
                         
                         if (enPublished && hiPublished) {
-                          return <span className="text-green-700">📱 Published in: <strong>Both Languages</strong></span>
+                          return <span className="text-green-700 inline-flex items-center gap-1"><span>📱</span><span className="truncate">Published in: <strong>Both Languages</strong></span></span>
                         } else if (enPublished) {
-                          return <span className="text-indigo-700">📱 Published in: <strong>English Only</strong></span>
+                          return <span className="text-indigo-700 inline-flex items-center gap-1"><span>📱</span><span className="truncate">Published in: <strong>English Only</strong></span></span>
                         } else if (hiPublished) {
-                          return <span className="text-amber-700">📱 Published in: <strong>Hindi Only</strong></span>
+                          return <span className="text-amber-700 inline-flex items-center gap-1"><span>📱</span><span className="truncate">Published in: <strong>Hindi Only</strong></span></span>
                         } else {
-                          return <span className="text-gray-600">📝 Draft - Not Published</span>
+                          return <span className="text-gray-600 inline-flex items-center gap-1"><span>📝</span><span className="truncate">Draft - Not Published</span></span>
                         }
                       })()}
                     </div>
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2">
+                    {/* Row 1: Edit button (full width) */}
                     <Link
                       to={`/editor/${postGroup.groupId}`}
-                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-indigo-600 text-white px-3 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
+                      className="block w-full text-center bg-indigo-600 text-white px-3 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
                     >
                       Edit
                     </Link>
-                    {post.status === 'published' && postGroup.en && (
-                      post.content_type === 'link' && postGroup.en.external_url ? (
-                        <a
-                          href={postGroup.en.external_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
-                        >
-                          View EN
-                        </a>
-                      ) : (
-                        <Link
-                          to={`/blog/${postGroup.en.slug}`}
-                          target="_blank"
-                          className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
-                        >
-                          View EN
-                        </Link>
-                      )
+                    
+                    {/* Row 2: View buttons (side by side if both exist) */}
+                    {(postGroup.en?.status === 'published' || postGroup.hi?.status === 'published') && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* View EN button - only show if English is published */}
+                        {postGroup.en?.status === 'published' && (
+                          post.content_type === 'link' && postGroup.en.external_url ? (
+                            <a
+                              href={postGroup.en.external_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-center bg-indigo-100 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-200 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
+                                !postGroup.hi || postGroup.hi.status !== 'published' ? 'col-span-2' : ''
+                              }`}
+                            >
+                              View EN
+                            </a>
+                          ) : (
+                            <Link
+                              to={`/blog/${postGroup.en.slug}`}
+                              target="_blank"
+                              className={`text-center bg-indigo-100 text-indigo-700 px-3 py-2 rounded-md hover:bg-indigo-200 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
+                                !postGroup.hi || postGroup.hi.status !== 'published' ? 'col-span-2' : ''
+                              }`}
+                            >
+                              View EN
+                            </Link>
+                          )
+                        )}
+                        
+                        {/* View HI button - only show if Hindi is published */}
+                        {postGroup.hi?.status === 'published' && (
+                          post.content_type === 'link' && postGroup.hi.external_url ? (
+                            <a
+                              href={postGroup.hi.external_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`text-center bg-green-100 text-green-700 px-3 py-2 rounded-md hover:bg-green-200 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
+                                !postGroup.en || postGroup.en.status !== 'published' ? 'col-span-2' : ''
+                              }`}
+                            >
+                              View HI
+                            </a>
+                          ) : (
+                            <Link
+                              to={`/blog/${postGroup.hi.slug}`}
+                              target="_blank"
+                              className={`text-center bg-green-100 text-green-700 px-3 py-2 rounded-md hover:bg-green-200 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis ${
+                                !postGroup.en || postGroup.en.status !== 'published' ? 'col-span-2' : ''
+                              }`}
+                            >
+                              View HI
+                            </Link>
+                          )
+                        )}
+                      </div>
                     )}
-                    <button
-                      onClick={() => handlePublish(postGroup)}
-                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
-                    >
-                      {post.status === 'published' ? 'Unpublish' : 'Publish'}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(postGroup.groupId, postGroup.en?.id, postGroup.hi?.id)}
-                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-                    >
-                      Delete
-                    </button>
+                    
+                    {/* Row 3: Publish and Delete buttons (side by side) */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => handlePublish(postGroup)}
+                        className="px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis"
+                      >
+                        {post.status === 'published' ? 'Unpublish' : 'Publish'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(postGroup.groupId, postGroup.en?.id, postGroup.hi?.id)}
+                        className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
               )
