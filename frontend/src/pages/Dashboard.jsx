@@ -17,7 +17,17 @@ export default function Dashboard() {
   const fetchPosts = async () => {
     try {
       const res = await api.get('/posts')
-      setPosts(res.data)
+      // Group posts by post_group_id
+      const grouped = {}
+      res.data.forEach(post => {
+        const groupId = post.post_group_id || post.id
+        if (!grouped[groupId]) {
+          grouped[groupId] = { en: null, hi: null, groupId }
+        }
+        if (post.language === 'en') grouped[groupId].en = post
+        if (post.language === 'hi') grouped[groupId].hi = post
+      })
+      setPosts(Object.values(grouped))
     } catch (error) {
       toast.error('Failed to load posts')
     } finally {
@@ -25,25 +35,51 @@ export default function Dashboard() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this post?')) return
+  const handleDelete = async (groupId, enId, hiId) => {
+    if (!window.confirm('Are you sure you want to delete both language versions of this post?')) return
 
     try {
-      await api.delete(`/posts/${id}`)
-      toast.success('Post deleted')
+      // Delete both English and Hindi versions
+      if (enId) await api.delete(`/posts/${enId}`)
+      if (hiId) await api.delete(`/posts/${hiId}`)
+      toast.success('Posts deleted')
       fetchPosts()
     } catch (error) {
-      toast.error('Failed to delete post')
+      toast.error('Failed to delete posts')
     }
   }
 
-  const handlePublish = async (post) => {
+  const handlePublish = async (postGroup) => {
+    const post = postGroup.en || postGroup.hi
+    if (!post) return
+
+    const newStatus = post.status === 'published' ? 'draft' : 'published'
+    
     try {
-      await api.put(`/posts/${post.id}`, {
-        ...post,
-        status: post.status === 'published' ? 'draft' : 'published'
-      })
-      toast.success(`Post ${post.status === 'published' ? 'unpublished' : 'published'}`)
+      // Update both posts via dual-language endpoint if they exist
+      if (postGroup.en && postGroup.hi) {
+        await api.put(`/posts/dual-language/${postGroup.groupId}`, {
+          title_en: postGroup.en.title,
+          title_hi: postGroup.hi.title,
+          excerpt_en: postGroup.en.excerpt,
+          excerpt_hi: postGroup.hi.excerpt,
+          content_json_en: postGroup.en.content_json,
+          content_json_hi: postGroup.hi.content_json,
+          external_url_en: postGroup.en.external_url,
+          external_url_hi: postGroup.hi.external_url,
+          content_type: post.content_type,
+          thumbnail_url: post.thumbnail_url,
+          status: newStatus
+        })
+      } else {
+        // Fallback for single language posts (legacy)
+        const singlePost = postGroup.en || postGroup.hi
+        await api.put(`/posts/${singlePost.id}`, {
+          ...singlePost,
+          status: newStatus
+        })
+      }
+      toast.success(`Post ${newStatus === 'published' ? 'published' : 'unpublished'}`)
       fetchPosts()
     } catch (error) {
       toast.error('Failed to update post')
@@ -98,74 +134,145 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-            {posts.map((post) => (
-              <div key={post.id} className="bg-white rounded-lg shadow p-4 sm:p-6">
-                <div className="flex justify-between items-start gap-2 mb-2">
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 line-clamp-2 min-w-0">
-                    {post.title || 'Untitled'}
-                  </h3>
-                  <div className="flex flex-shrink-0 items-center gap-1.5 flex-wrap justify-end">
-                    {post.content_type === 'link' && (
-                      <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800">
-                        Link
+            {posts.map((postGroup) => {
+              const post = postGroup.en || postGroup.hi
+              if (!post) return null
+              
+              return (
+                <div key={postGroup.groupId} className="bg-white rounded-lg shadow p-4 sm:p-6">
+                  {/* Display both language titles */}
+                  <div className="mb-3 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className={`px-2 py-1 text-xs rounded font-medium flex-shrink-0 ${
+                        postGroup.en?.status === 'published' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-indigo-100 text-indigo-800'
+                      }`}>
+                        EN
                       </span>
-                    )}
-                    <span
-                      className={`px-2 py-1 text-xs rounded ${
-                        post.status === 'published'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
+                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1">
+                        {postGroup.en?.title || 'No English version'}
+                      </h3>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className={`px-2 py-1 text-xs rounded font-medium flex-shrink-0 ${
+                        postGroup.hi?.status === 'published' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        HI
+                      </span>
+                      <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 flex-1">
+                        {postGroup.hi?.title || 'No Hindi version'}
+                      </h3>
+                    </div>
+                  </div>
+
+                  {/* Status badges */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {post.content_type === 'link' && (
+                        <span className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-medium">
+                          Link
+                        </span>
+                      )}
+                      
+                      {/* Show publish status for each language */}
+                      <div className="flex items-center gap-1.5">
+                        {postGroup.en && (
+                          <span
+                            className={`px-2 py-1 text-xs rounded font-medium ${
+                              postGroup.en.status === 'published'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                            title={`English: ${postGroup.en.status}`}
+                          >
+                            EN: {postGroup.en.status === 'published' ? '✓' : '○'}
+                          </span>
+                        )}
+                        {postGroup.hi && (
+                          <span
+                            className={`px-2 py-1 text-xs rounded font-medium ${
+                              postGroup.hi.status === 'published'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}
+                            title={`Hindi: ${postGroup.hi.status}`}
+                          >
+                            HI: {postGroup.hi.status === 'published' ? '✓' : '○'}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <span className="text-xs text-gray-500 ml-auto">
+                        {new Date(post.updated_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    
+                    {/* Summary status message */}
+                    <div className="text-xs font-medium">
+                      {(() => {
+                        const enPublished = postGroup.en?.status === 'published'
+                        const hiPublished = postGroup.hi?.status === 'published'
+                        
+                        if (enPublished && hiPublished) {
+                          return <span className="text-green-700">📱 Published in: <strong>Both Languages</strong></span>
+                        } else if (enPublished) {
+                          return <span className="text-indigo-700">📱 Published in: <strong>English Only</strong></span>
+                        } else if (hiPublished) {
+                          return <span className="text-amber-700">📱 Published in: <strong>Hindi Only</strong></span>
+                        } else {
+                          return <span className="text-gray-600">📝 Draft - Not Published</span>
+                        }
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      to={`/editor/${postGroup.groupId}`}
+                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-indigo-600 text-white px-3 py-2 rounded-md hover:bg-indigo-700 text-sm font-medium"
                     >
-                      {post.status}
-                    </span>
+                      Edit
+                    </Link>
+                    {post.status === 'published' && postGroup.en && (
+                      post.content_type === 'link' && postGroup.en.external_url ? (
+                        <a
+                          href={postGroup.en.external_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
+                        >
+                          View EN
+                        </a>
+                      ) : (
+                        <Link
+                          to={`/blog/${postGroup.en.slug}`}
+                          target="_blank"
+                          className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
+                        >
+                          View EN
+                        </Link>
+                      )
+                    )}
+                    <button
+                      onClick={() => handlePublish(postGroup)}
+                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+                    >
+                      {post.status === 'published' ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(postGroup.groupId, postGroup.en?.id, postGroup.hi?.id)}
+                      className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500 mb-4">
-                  {new Date(post.updated_at).toLocaleDateString()}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    to={`/editor/${post.id}`}
-                    className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-indigo-600 text-white px-3 py-2 rounded-md hover:bg-indigo-700 text-sm"
-                  >
-                    Edit
-                  </Link>
-                  {post.status === 'published' && (
-                    post.content_type === 'link' && post.external_url ? (
-                      <a
-                        href={post.external_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
-                      >
-                        View
-                      </a>
-                    ) : (
-                      <Link
-                        to={`/blog/${post.slug}`}
-                        target="_blank"
-                        className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 text-center bg-gray-200 text-gray-700 px-3 py-2 rounded-md hover:bg-gray-300 text-sm"
-                      >
-                        View
-                      </Link>
-                    )
-                  )}
-                  <button
-                    onClick={() => handlePublish(post)}
-                    className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
-                  >
-                    {post.status === 'published' ? 'Unpublish' : 'Publish'}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(post.id)}
-                    className="flex-1 min-w-[calc(50%-4px)] sm:min-w-0 px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
